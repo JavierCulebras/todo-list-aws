@@ -1,0 +1,62 @@
+pipeline {
+    agent any
+    stages {
+        stage('getCode') {
+            steps {
+                git branch: 'develop', url: 'https://github.com/JavierCulebras/todo-list-aws', credentialsId: 'github-token'
+            }
+        }
+        stage('static-test') {
+            steps {
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                        
+
+                        flake8 --exit-zero --format=pylint src >flake8.out
+                        bandit -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}"
+                    '''
+                }
+                recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
+                recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')]
+            }
+        }
+        stage('sam-deploy') {
+            steps{
+                sh '''
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-file samconfig.toml --config-env staging --resolve-s3 --no-fail-on-empty-changeset --no-confirm-changeset
+                '''
+            }
+        }
+        
+        stage('rest-test') {
+            steps{
+                sh'''
+                    export BASE_URL=$(aws cloudformation describe-stacks --stack-name todo-list-aws-staging --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" --output text)
+                    /usr/local/bin/pytest test/integration/todoApiTest.py -v
+                '''
+            }
+        }
+        
+        stage('promote') {
+            steps {
+
+                sh '''
+                    
+                '''
+                withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+                    sh 'git checkout master'
+                    sh 'git merge develop'
+                    sh 'git push https://JavierCulebras:${GITHUB_TOKEN}@github.com/JavierCulebras/todo-list-aws.git'
+                }
+                
+            }
+        }
+    }
+    post {
+        always {
+            deleteDir()
+        }
+    }
+}

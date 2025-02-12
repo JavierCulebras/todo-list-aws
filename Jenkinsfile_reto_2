@@ -1,0 +1,34 @@
+pipeline {
+    agent any
+    stages {
+        stage('getCode') {
+            steps {
+                git branch: 'develop', url: 'https://github.com/JavierCulebras/todo-list-aws', credentialsId: 'github-token'
+            }
+        }
+        
+        stage('sam-deploy') {
+            steps{
+                sh '''
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-file samconfig.toml --config-env production --resolve-s3 --no-fail-on-empty-changeset --no-confirm-changeset
+                '''
+            }
+        }
+        
+        stage('rest-test') {
+            steps{
+                sh'''
+                    export BASE_URL=$(aws cloudformation describe-stacks --stack-name todo-list-aws-production --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" --output text)
+                    /usr/local/bin/pytest -k "test_api_listtodos or test_api_gettodo" test/integration/todoApiTest.py -v
+                '''
+            }
+        }
+    }
+    post {
+        always {
+            deleteDir()
+        }
+    }
+}
