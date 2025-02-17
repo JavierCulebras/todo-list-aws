@@ -1,0 +1,52 @@
+pipeline {
+    agent any
+    stages {
+        stage('getCode') {
+            agent { label 'main' }
+            steps {
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+
+                git branch: 'master', url: 'https://github.com/JavierCulebras/todo-list-aws', credentialsId: 'github-token'
+                
+                dir('config') {
+                    git branch: 'production', url: 'https://github.com/JavierCulebras/todo-list-aws-config', credentialsId: 'github-token'
+                }
+
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+        
+        stage('sam-deploy') {
+            agent { label 'main' }
+            steps {
+                unstash 'source_code'
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                sh '''
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-file config/samconfig.toml --config-env production --resolve-s3 --no-fail-on-empty-changeset --no-confirm-changeset
+                '''
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+        
+        stage('rest-test') {
+            agent { label 'Node_1' }
+            steps {
+                unstash 'source_code'
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                sh '''
+                    export BASE_URL=$(aws cloudformation describe-stacks --stack-name todo-list-aws-production --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" --output text)
+                    /usr/local/bin/pytest -k "test_api_listtodos or test_api_gettodo" test/integration/todoApiTest.py -v
+                '''
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+    }
+    post {
+        always {
+            node('main') { deleteDir() }
+            node('Node_1') { deleteDir() }
+        }
+    }
+}
