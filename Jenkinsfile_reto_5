@@ -1,0 +1,81 @@
+pipeline {
+    agent any
+    stages {
+        stage('getCode') {
+            agent { label 'main' }
+            steps {
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                
+                dir('config') {
+                    git branch: 'staging', url: 'https://github.com/JavierCulebras/todo-list-aws-config', credentialsId: 'github-token'
+                }
+
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+        stage('static-test') {
+            agent { label 'Node_1' }
+            steps {
+                unstash 'source_code'
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    sh '''
+                        flake8 --exit-zero --format=pylint src >flake8.out
+                        bandit -r src -f custom -o bandit.out --msg-template "{abspath}:{line}: [{test_id}] {msg}"
+                    '''
+                }
+                recordIssues tools: [flake8(name: 'Flake8', pattern: 'flake8.out')]
+                recordIssues tools: [pyLint(name: 'Bandit', pattern: 'bandit.out')]
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+        stage('sam-deploy') {
+            agent { label 'main' }
+            steps {
+                unstash 'source_code'
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                sh '''
+                    sam build
+                    sam validate --region us-east-1
+                    sam deploy --config-file config/samconfig.toml --config-env staging --resolve-s3 --no-fail-on-empty-changeset --no-confirm-changeset
+                '''
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+        
+        stage('rest-test') {
+            agent { label 'Node_2' }
+            steps {
+                unstash 'source_code'
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                sh '''
+                    export BASE_URL=$(aws cloudformation describe-stacks --stack-name todo-list-aws-staging --query "Stacks[0].Outputs[?OutputKey=='BaseUrlApi'].OutputValue" --output text)
+                    /usr/local/bin/pytest test/integration/todoApiTest.py -v
+                '''
+                stash name: 'source_code', includes: '**/*'
+            }
+        }
+        
+        stage('promote') {
+            agent { label 'main' }
+            steps {
+                unstash 'source_code'
+                sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
+                withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+                    sh 'git checkout master'
+                    sh 'git merge develop'
+                    sh 'git push https://JavierCulebras:${GITHUB_TOKEN}@github.com/JavierCulebras/todo-list-aws.git'
+                }
+            }
+        }
+    }
+    post {
+        always {
+            // Limpiar en todos los nodos
+            node('main') { deleteDir() }
+            node('Node_1') { deleteDir() }
+            node('Node_2') { deleteDir() }
+        }
+    }
+    
+}
