@@ -64,6 +64,7 @@ pipeline {
                 withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
                     sh 'git remote update'
                     sh 'git fetch --all'
+                    sh 'git ls-remote https://github.com/JavierCulebras/todo-list-aws.git'
                     sh 'git checkout -b master origin/master || git checkout master'
                     sh 'git merge -X ours develop'
                     sh 'git push https://JavierCulebras:${GITHUB_TOKEN}@github.com/JavierCulebras/todo-list-aws.git'
