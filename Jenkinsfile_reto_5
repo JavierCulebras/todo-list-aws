@@ -63,8 +63,8 @@ pipeline {
                 sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
                 withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
                     sh 'git remote update'
-                    sh 'git fetch'
-                    sh 'git checkout --track origin/master'
+                    sh 'git fetch --all'
+                    sh 'git checkout -b master origin/master || git checkout master'
                     sh 'git merge -X ours develop'
                     sh 'git push https://JavierCulebras:${GITHUB_TOKEN}@github.com/JavierCulebras/todo-list-aws.git'
                 }
