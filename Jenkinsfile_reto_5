@@ -62,6 +62,7 @@ pipeline {
                 unstash 'source_code'
                 sh 'echo "Running on: $(whoami)@$(hostname) (Jenkins Node: ${NODE_NAME})"'
                 withCredentials([usernamePassword(credentialsId: 'github-token', usernameVariable: 'GITHUB_USER', passwordVariable: 'GITHUB_TOKEN')]) {
+                    sh 'git remote prune origin'
                     sh 'git fetch --all'
                     sh 'git branch -r'
                     sh 'git checkout -b master origin/master'
