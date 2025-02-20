@@ -68,6 +68,8 @@ pipeline {
                     sh 'git branch -r'
                     sh 'git remote -v'
                     sh 'git checkout -b master origin/master'
+                    sh 'git checkout -b develop origin/develop'
+                    sh 'git checkout master'
                     sh 'git merge -X ours develop'
                     sh 'git push https://JavierCulebras:${GITHUB_TOKEN}@github.com/JavierCulebras/todo-list-aws.git'
                 }
